@@ -30,13 +30,20 @@ array( 1, $username, $password, 'post', 'sports', 10, array( 's' => 'Tom Brady' 
 
 Basically, it accepts anything get_posts accepts (http://codex.wordpress.org/Function_Reference/query_posts#Parameters)
 
+
+*******
+ * andboson
+ # 3.12.2015 added some post fields
+
 */
 
-add_filter( 'xmlrpc_methods', 'add_my_xmlrpc_methods' );
 
+const POST_TYPE = 'post';
+add_filter( 'xmlrpc_methods', 'add_my_xmlrpc_methods' );
 function add_my_xmlrpc_methods( $methods ) {
     $methods['bdn.getPosts'] = 'bdn_xmlrpc_get_posts';
-    return $methods;
+	
+    return $methods;	
 }
 
 function bdn_xmlrpc_get_posts( $args ) {
@@ -72,7 +79,7 @@ function bdn_xmlrpc_get_posts( $args ) {
 			);
 		if( is_array( $extra ) )
 			$post_args = array_merge( $post_args, $extra );
-		
+
 		$posts_list = query_posts( $post_args );
 		
 		if ( !$posts_list ) {
@@ -118,17 +125,17 @@ function bdn_xmlrpc_get_posts( $args ) {
 			if ( $entry->post_status === 'future' )
 				$entry->post_status = 'publish';
 
-			$struct[] = array(
-				'dateCreated' => new IXR_Date( $post_date ),
-				'dateModified' => new IXR_Date( $post_modified ),
+			$entryPost= array(
+				'post_date' => new IXR_Date( $post_date ),
+				'post_updated' => new IXR_Date( $post_modified ),
 				'userid' => $entry->post_author,
-				'postid' => $entry->ID,
+				'post_id' => $entry->ID,
 				'description' => $post['main'],
-				'title' => $entry->post_title,
+				'post_title' => $entry->post_title,
 				'link' => $link,
 				'permaLink' => $link,
-				// commented out because no other tool seems to use this
-				// 'content' => $entry['post_content'],
+				'post_parent'       => strval( $post['post_parent'] ),
+				'post_content' => $entry->post_content,
 				'categories' => $categories,
 				'mt_excerpt' => $entry->post_excerpt,
 				'mt_text_more' => $post['extended'],
@@ -136,7 +143,6 @@ function bdn_xmlrpc_get_posts( $args ) {
 				'mt_allow_pings' => $allow_pings,
 				'wp_slug' => $entry->post_name,
 				'wp_password' => $entry->post_password,
-				'wp_author_id' => $author->ID,
 				'wp_authors' => $authors,
 				'date_created_gmt' => new IXR_Date($post_date_gmt),
 				'post_status' => $entry->post_status,
@@ -144,6 +150,14 @@ function bdn_xmlrpc_get_posts( $args ) {
 				'publications' => $publications,
 			);
 
+			$post_type_taxonomies = get_object_taxonomies(POST_TYPE, 'names' );
+			$terms = wp_get_object_terms( $entry->ID, $post_type_taxonomies );
+			$entryPost['terms'] = array();
+			foreach ( $terms as $term ) {
+				$entryPost['terms'][] = _prepare_term( $term );
+			}
+
+			$struct[] = $entryPost;
 		}
 
 		$recent_posts = array();
@@ -153,4 +167,30 @@ function bdn_xmlrpc_get_posts( $args ) {
 
 		return $recent_posts;
 
+}
+
+//from wp_xmlrpc_server class
+function _prepare_term( $term ) {
+	$_term = $term;
+	if ( ! is_array( $_term ) )
+		$_term = get_object_vars( $_term );
+
+	// For integers which may be larger than XML-RPC supports ensure we return strings.
+	$_term['term_id'] = strval( $_term['term_id'] );
+	$_term['term_group'] = strval( $_term['term_group'] );
+	$_term['term_taxonomy_id'] = strval( $_term['term_taxonomy_id'] );
+	$_term['parent'] = strval( $_term['parent'] );
+
+	// Count we are happy to return as an integer because people really shouldn't use terms that much.
+	$_term['count'] = intval( $_term['count'] );
+
+	/**
+	 * Filter XML-RPC-prepared data for the given term.
+	 *
+	 * @since 3.4.0
+	 *
+	 * @param array        $_term An array of term data.
+	 * @param array|object $term  Term object or array.
+	 */
+	return apply_filters( 'xmlrpc_prepare_term', $_term, $term );
 }
